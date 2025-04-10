@@ -1,93 +1,79 @@
+import { supabase } from '@/lib/supabase';
+import { Patient } from '@/types/billing';
 
-import { Patient, PatientDatabase } from "@/types/billing";
-import { generatePatientId } from "@/utils/billingUtils";
+export const patientDatabase = {
+  async addPatient(patientData: Omit<Patient, "id" | "dateAdded">) {
+    const { data, error } = await supabase
+      .from('patients')
+      .insert({
+        name: patientData.name,
+        email: patientData.email,
+        phone: patientData.phone,
+        address: patientData.address,
+        user_id: (await supabase.auth.getUser()).data.user?.id
+      })
+      .select()
+      .single();
 
-// Initialize the database from localStorage or with empty array
-const initializePatientDatabase = (): Patient[] => {
-  const storedPatients = localStorage.getItem('patients');
-  if (storedPatients) {
-    try {
-      // Parse stored patients and convert date strings back to Date objects
-      const patients = JSON.parse(storedPatients);
-      return patients.map((patient: any) => ({
-        ...patient,
-        dateAdded: new Date(patient.dateAdded)
-      }));
-    } catch (e) {
-      console.error('Error parsing patients from localStorage:', e);
-      return [];
-    }
+    if (error) throw error;
+
+    return {
+      ...data,
+      dateAdded: new Date(data.date_added)
+    } as Patient;
+  },
+
+  async getPatient(id: string) {
+    const { data, error } = await supabase
+      .from('patients')
+      .select()
+      .eq('id', id)
+      .single();
+
+    if (error) return undefined;
+
+    return {
+      ...data,
+      dateAdded: new Date(data.date_added)
+    } as Patient;
+  },
+
+  async getAllPatients() {
+    const { data, error } = await supabase
+      .from('patients')
+      .select()
+      .order('date_added', { ascending: false });
+
+    if (error) throw error;
+
+    return data.map(patient => ({
+      ...patient,
+      dateAdded: new Date(patient.date_added)
+    })) as Patient[];
+  },
+
+  async updatePatient(id: string, patientData: Partial<Omit<Patient, "id" | "dateAdded">>) {
+    const { data, error } = await supabase
+      .from('patients')
+      .update(patientData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return undefined;
+
+    return {
+      ...data,
+      dateAdded: new Date(data.date_added)
+    } as Patient;
+  },
+
+  async deletePatient(id: string) {
+    const { error } = await supabase
+      .from('patients')
+      .delete()
+      .eq('id', id);
+
+    return !error;
   }
-  return [];
 };
-
-// Save patients to localStorage
-const savePatients = (patients: Patient[]): void => {
-  try {
-    localStorage.setItem('patients', JSON.stringify(patients));
-  } catch (e) {
-    console.error('Error saving patients to localStorage:', e);
-  }
-};
-
-// Create a singleton database instance
-const createPatientDatabase = (): PatientDatabase => {
-  let patients = initializePatientDatabase();
-  
-  return {
-    patients,
-    
-    addPatient: (patientData) => {
-      const newPatient: Patient = {
-        ...patientData,
-        id: generatePatientId(),
-        dateAdded: new Date()
-      };
-      
-      patients = [...patients, newPatient];
-      savePatients(patients);
-      return newPatient;
-    },
-    
-    getPatient: (id) => {
-      return patients.find(patient => patient.id === id);
-    },
-    
-    getAllPatients: () => {
-      return [...patients];
-    },
-    
-    updatePatient: (id, patientData) => {
-      const index = patients.findIndex(patient => patient.id === id);
-      if (index === -1) return undefined;
-      
-      const updatedPatient = {
-        ...patients[index],
-        ...patientData
-      };
-      
-      patients = [
-        ...patients.slice(0, index),
-        updatedPatient,
-        ...patients.slice(index + 1)
-      ];
-      
-      savePatients(patients);
-      return updatedPatient;
-    },
-    
-    deletePatient: (id) => {
-      const initialLength = patients.length;
-      patients = patients.filter(patient => patient.id !== id);
-      
-      if (patients.length !== initialLength) {
-        savePatients(patients);
-        return true;
-      }
-      return false;
-    }
-  };
-};
-
-// Export a singleton instance
-export const patientDatabase = createPatientDatabase();
